@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Tree Viewer — Rotterdam</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; font-family: sans-serif; }
+    #cesiumContainer { width: 100vw; height: 100vh; }
+
+    #info {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(15,15,15,0.75); color: #fff;
+      padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; z-index: 999; pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+    #info small { color: #aaa; }
+
+    #controls {
+      position: absolute; top: 12px; right: 12px;
+      display: flex; flex-direction: column; gap: 6px; z-index: 999;
+    }
+    .ctrl-btn {
+      width: 36px; height: 36px;
+      background: rgba(15,15,15,0.8); color: #fff;
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+      font-size: 18px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(4px); transition: background 0.15s;
+    }
+    .ctrl-btn:hover { background: rgba(60,60,60,0.9); }
+
+    #basemap-switcher {
+      position: absolute; bottom: 40px; right: 12px;
+      display: flex; flex-direction: column; gap: 5px; z-index: 999;
+    }
+    .bm-btn {
+      padding: 5px 10px; background: rgba(15,15,15,0.8); color: #ccc;
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+      font-size: 11px; cursor: pointer; backdrop-filter: blur(4px);
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .bm-btn:hover { background: rgba(60,60,60,0.9); color: #fff; }
+    .bm-btn.active { border-color: #4cff91; color: #4cff91; }
+
+    #status {
+      position: absolute; bottom: 12px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75); color: #4cff91;
+      padding: 8px 18px; border-radius: 20px;
+      font-size: 12px; z-index: 999; backdrop-filter: blur(4px);
+    }
+
+    /* ── Tree info popup ── */
+    #tree-popup {
+      display: none;
+      position: absolute;
+      background: rgba(10,10,18,0.92);
+      color: #fff;
+      border: 1px solid rgba(78,255,145,0.35);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13px;
+      z-index: 1000;
+      backdrop-filter: blur(8px);
+      min-width: 220px;
+      pointer-events: all;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #tree-popup .popup-title {
+      font-size: 14px; font-weight: bold;
+      color: #4cff91; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #tree-popup table { width: 100%; border-collapse: collapse; }
+    #tree-popup td { padding: 3px 0; }
+    #tree-popup td:first-child { color: #aaa; padding-right: 12px; white-space: nowrap; }
+    #tree-popup td:last-child { color: #fff; font-weight: 500; }
+    #popup-close {
+      position: absolute; top: 8px; right: 10px;
+      cursor: pointer; color: #aaa; font-size: 15px;
+      pointer-events: all;
+    }
+    #popup-close:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+
+  <div id="info">🌲 3D Tree Viewer<br><small>Rotterdam, Netherlands</small></div>
+
+  <div id="controls">
+    <button class="ctrl-btn" id="btn-zoom-in"  title="Zoom in">+</button>
+    <button class="ctrl-btn" id="btn-zoom-out" title="Zoom out">−</button>
+    <button class="ctrl-btn" id="btn-reset"    title="Fly to tree">⌂</button>
+  </div>
+
+  <div id="basemap-switcher">
+    <button class="bm-btn"        data-bm="satellite">🛰 Satellite</button>
+    <button class="bm-btn"        data-bm="osm">🌍 OSM</button>
+    <button class="bm-btn active" data-bm="dark">🌑 Dark</button>
+  </div>
+
+  <div id="status">Loading...</div>
+
+  <div id="tree-popup">
+    <span id="popup-close">✕</span>
+    <div class="popup-title">🌲 Tree Information</div>
+    <table>
+      <tr><td>Species</td>       <td>Urban Tree</td></tr>
+      <tr><td>Location</td>      <td>Rotterdam, NL</td></tr>
+      <tr><td>Longitude</td>     <td>4.5698°E</td></tr>
+      <tr><td>Latitude</td>      <td>51.8960°N</td></tr>
+      <tr><td>CRS (source)</td>  <td>RD New (EPSG:28992)</td></tr>
+      <tr><td>Height</td>        <td>~9.8 m</td></tr>
+      <tr><td>Crown width</td>   <td>~5.9 m</td></tr>
+      <tr><td>Components</td>    <td>Crown + Stem</td></tr>
+      <tr><td>Vertices</td>      <td>560</td></tr>
+      <tr><td>Faces</td>         <td>1,112</td></tr>
+      <tr><td>Format</td>        <td>3D Tiles b3dm / glTF</td></tr>
+    </table>
+  </div>
+
+  <script>
+  (async () => {
+    Cesium.Ion.defaultAccessToken = '';
+
+    const BASEMAPS = {
+      satellite: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        credit: 'Tiles © Esri'
+      }),
+      osm: () => new Cesium.OpenStreetMapImageryProvider({
+        url: 'https://tile.openstreetmap.org/',
+        credit: '© OpenStreetMap contributors'
+      }),
+      dark: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png',
+        credit: '© Stadia Maps © OpenStreetMap'
+      }),
+    };
+
+    // ── Viewer — start with dark basemap ─────────────────────────────────────
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: false,
+      navigationHelpButton: false,
+      animation: false,
+      timeline: false,
+      fullscreenButton: false,
+      imageryProvider: BASEMAPS.dark(),
+    });
+    viewer.cesiumWidget.creditContainer.style.display = 'none';
+
+    // ── Load tileset ──────────────────────────────────────────────────────────
+    const statusEl = document.getElementById('status');
+    let tileset;
+
+    try {
+      tileset = await Cesium.Cesium3DTileset.fromUrl(
+        'http://localhost:__PORT__/tileset.json'
+      );
+      viewer.scene.primitives.add(tileset);
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(4.5698066, 51.8960024, 80),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+        duration: 2
+      });
+      statusEl.textContent = '✅ 3D tree loaded — click the tree for info';
+      statusEl.style.color = '#4cff91';
+      setTimeout(() => statusEl.style.display = 'none', 4000);
+    } catch (err) {
+      statusEl.textContent = '❌ Error: ' + err.message;
+      statusEl.style.color = '#ff6b6b';
+      console.error(err);
+    }
+
+    // ── Click to show tree info popup ─────────────────────────────────────────
+    const popup = document.getElementById('tree-popup');
+
+    viewer.screenSpaceEventHandler.setInputAction(click => {
+      const picked = viewer.scene.pick(click.position);
+      const hitTree = Cesium.defined(picked) &&
+                      (picked.primitive === tileset ||
+                       picked.tileset   === tileset ||
+                       picked._content  !== undefined);
+
+      if (hitTree) {
+        const x = click.position.x + 14;
+        const y = click.position.y - 10;
+        const pw = 240, ph = 240;
+        popup.style.left = (x + pw > window.innerWidth  ? x - pw - 28 : x) + 'px';
+        popup.style.top  = (y + ph > window.innerHeight ? y - ph      : y) + 'px';
+        popup.style.display = 'block';
+        popup.style.pointerEvents = 'all';
+      } else {
+        popup.style.display = 'none';
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    document.getElementById('popup-close').addEventListener('click', () => {
+      popup.style.display = 'none';
+    });
+    // pointer-events none on popup except close btn — handled in CSS
+
+    // ── Zoom + reset ──────────────────────────────────────────────────────────
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      viewer.camera.zoomIn(viewer.camera.positionCartographic.height * 0.4);
+    });
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      viewer.camera.zoomOut(viewer.camera.positionCartographic.height * 0.6);
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      popup.style.display = 'none';
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(4.5698066, 51.8960024, 80),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+        duration: 1.5
+      });
+    });
+
+    // ── Basemap switcher ──────────────────────────────────────────────────────
+    document.querySelectorAll('.bm-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        viewer.imageryLayers.removeAll();
+        viewer.imageryLayers.addImageryProvider(BASEMAPS[btn.dataset.bm]());
+        document.querySelectorAll('.bm-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  })();
+  </script>
+</body>
+</html>
