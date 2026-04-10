@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Rotterdam 3D Trees</title>
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.104/Build/Cesium/Cesium.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.104/Build/Cesium/Widgets/widgets.css" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif}
+#c{width:100vw;height:100vh}
+#topbar{position:absolute;top:0;left:0;right:0;height:52px;
+  background:rgba(10,10,18,0.88);backdrop-filter:blur(8px);
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  display:flex;align-items:center;padding:0 16px;gap:16px;z-index:999}
+h1{font-size:15px;color:#fff;font-weight:600;white-space:nowrap}
+h1 span{color:#4cff91}
+#year-btns,#region-btns{display:flex;gap:6px}
+#region-btns{margin-left:8px}
+.yr-btn,.rg-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;
+  border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.06);
+  color:#ccc;cursor:pointer;transition:all 0.15s}
+.yr-btn:hover,.rg-btn:hover{background:rgba(255,255,255,0.12);color:#fff}
+.yr-btn.active{background:#4cff91;color:#000;border-color:#4cff91}
+.rg-btn.active{border-color:#7eb8ff;color:#7eb8ff}
+#status{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,0.85);color:#4cff91;padding:7px 18px;
+  border-radius:20px;font-size:12px;z-index:999;white-space:nowrap}
+#controls{position:absolute;top:62px;right:12px;
+  display:flex;flex-direction:column;gap:6px;z-index:999}
+.ctrl-btn{width:38px;height:38px;background:rgba(10,10,18,0.85);color:#fff;
+  border:1px solid rgba(255,255,255,0.15);border-radius:6px;font-size:18px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background 0.15s}
+.ctrl-btn:hover{background:rgba(60,60,60,0.9)}
+.ctrl-btn.off{color:#555;border-color:rgba(255,255,255,0.05)}
+#popup{display:none;position:absolute;background:rgba(10,10,18,0.94);color:#fff;
+  border:1px solid rgba(78,255,145,0.3);border-radius:10px;
+  padding:14px 16px 12px;font-size:13px;z-index:1000;
+  min-width:240px;max-width:280px;box-shadow:0 4px 28px rgba(0,0,0,0.6)}
+#popup-close{position:absolute;top:8px;right:10px;cursor:pointer;color:#666;font-size:14px}
+#popup-close:hover{color:#fff}
+.popup-title{font-size:14px;font-weight:700;color:#4cff91;margin-bottom:10px}
+.pgrid{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin-bottom:10px}
+.lbl{color:#888;font-size:11px;padding:2px 0}
+.val{color:#fff;font-size:12px;font-weight:500;padding:2px 0}
+.ytable{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.ytable th{color:#888;font-weight:400;text-align:left;padding:3px 6px;
+  border-bottom:1px solid rgba(255,255,255,0.08)}
+.ytable td{padding:3px 6px;color:#ddd}
+.ytable tr.ayr td{color:#4cff91;font-weight:600}
+.ytable td.m{color:#555}
+</style>
+</head>
+<body>
+<div id="c"></div>
+<div id="topbar">
+  <h1>Rotterdam <span>3D Trees</span></h1>
+  <div id="year-btns">
+    <button class="yr-btn active" data-year="19">2019</button>
+    <button class="yr-btn" data-year="21">2021</button>
+    <button class="yr-btn" data-year="22">2022</button>
+    <button class="yr-btn" data-year="23">2023</button>
+  </div>
+  <div id="region-btns">
+    <button class="rg-btn active" data-lon="4.46" data-lat="51.89" data-alt="18000">All</button>
+    <button class="rg-btn" data-lon="4.37" data-lat="51.86" data-alt="3000">Hoogvliet</button>
+    <button class="rg-btn" data-lon="4.56" data-lat="51.88" data-alt="3000">IJsselmonde</button>
+    <button class="rg-btn" data-lon="4.55" data-lat="51.93" data-alt="3000">Kralingen</button>
+    <button class="rg-btn" data-lon="4.47" data-lat="51.92" data-alt="3000">Centrum</button>
+  </div>
+</div>
+<div id="controls">
+  <button class="ctrl-btn" id="btn-zi" title="Zoom in">+</button>
+  <button class="ctrl-btn" id="btn-zo" title="Zoom out">-</button>
+  <button class="ctrl-btn" id="btn-home" title="Overview" style="font-size:14px">&#8962;</button>
+  <button class="ctrl-btn" id="btn-map" title="Toggle satellite" style="font-size:11px;font-weight:600">SAT</button>
+</div>
+<div id="status">Loading...</div>
+<div id="popup">
+  <span id="popup-close">X</span>
+  <div class="popup-title">Tree <span id="p-id"></span></div>
+  <div class="pgrid">
+    <span class="lbl">Region</span>     <span class="val" id="p-region">-</span>
+    <span class="lbl">Height</span>     <span class="val" id="p-height">-</span>
+    <span class="lbl">Crown width</span><span class="val" id="p-crown">-</span>
+    <span class="lbl">Location</span>   <span class="val" id="p-loc">-</span>
+  </div>
+  <div style="color:#888;font-size:11px;margin-bottom:4px">Change over years:</div>
+  <table class="ytable">
+    <thead><tr><th>Year</th><th>Height</th><th>Crown w.</th></tr></thead>
+    <tbody id="p-years"></tbody>
+  </table>
+</div>
+
+<script>
+(async () => {
+  const BASE = 'https://m4h0ur.github.io/3d-tree-rotterdam';
+  const YLBL = {'19':'2019','21':'2021','22':'2022','23':'2023'};
+  const S = document.getElementById('status');
+
+  Cesium.Ion.defaultAccessToken = '';
+
+  // --- Viewer setup ---
+  const viewer = new Cesium.Viewer('c', {
+    baseLayerPicker:false, geocoder:false, homeButton:false,
+    sceneModePicker:false, navigationHelpButton:false,
+    animation:false, timeline:false, fullscreenButton:false,
+    infoBox:false, selectionIndicator:false,
+    imageryProvider: new Cesium.UrlTemplateImageryProvider({
+      url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      credit:'Esri', maximumLevel:19,
+    }),
+  });
+  viewer.cesiumWidget.creditContainer.style.display = 'none';
+  viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+  viewer.scene.globe.depthTestAgainstTerrain = false;
+
+  const flyTo = (lon,lat,alt) => viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lon,lat,alt),
+    orientation: {heading:0, pitch:Cesium.Math.toRadians(-55), roll:0},
+    duration: 1.5
+  });
+  flyTo(4.46, 51.89, 8000);
+
+  // --- tree_stats ---
+  let treeStats = {};
+  try { treeStats = await (await fetch(BASE+'/tree_stats.json')).json(); }
+  catch(e) {}
+
+  // --- 3D Tiles loading (Cesium 1.104 style with readyPromise) ---
+  let tileset = null;
+  let currentYear = '19';
+
+  async function loadYear(year) {
+    S.style.display='block'; S.style.color='#4cff91';
+    S.textContent = 'Loading '+YLBL[year]+'...';
+    document.getElementById('popup').style.display='none';
+
+    if (tileset) { viewer.scene.primitives.remove(tileset); tileset=null; }
+
+    try {
+      const ts = new Cesium.Cesium3DTileset({
+        url: BASE + '/tileset_' + year + '.json',
+        maximumScreenSpaceError: 512,
+      });
+      await ts.readyPromise;
+      viewer.scene.primitives.add(ts);
+      tileset = ts;
+      currentYear = year;
+      S.textContent = YLBL[year]+' loaded';
+      setTimeout(()=>S.style.display='none', 3000);
+    } catch(e) {
+      S.textContent = 'Error: '+e.message;
+      S.style.color='#f44';
+      console.error(e);
+    }
+  }
+
+  await loadYear('19');
+
+  // --- Year buttons ---
+  document.querySelectorAll('.yr-btn').forEach(b => b.addEventListener('click', async () => {
+    document.querySelectorAll('.yr-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    await loadYear(b.dataset.year);
+  }));
+
+  // --- Region buttons ---
+  document.querySelectorAll('.rg-btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.rg-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    flyTo(+b.dataset.lon, +b.dataset.lat, +b.dataset.alt);
+  }));
+
+  // --- Controls ---
+  document.getElementById('btn-zi').addEventListener('click',()=>
+    viewer.camera.zoomIn(viewer.camera.positionCartographic.height*0.4));
+  document.getElementById('btn-zo').addEventListener('click',()=>
+    viewer.camera.zoomOut(viewer.camera.positionCartographic.height*0.6));
+  document.getElementById('btn-home').addEventListener('click',()=>flyTo(4.46,51.89,18000));
+
+  let satOn = true;
+  document.getElementById('btn-map').addEventListener('click', () => {
+    satOn = !satOn;
+    viewer.imageryLayers.get(0).show = satOn;
+    const btn = document.getElementById('btn-map');
+    btn.classList.toggle('off', !satOn);
+    btn.title = satOn ? 'Hide satellite' : 'Show satellite';
+  });
+
+  // --- Click popup ---
+  const popup = document.getElementById('popup');
+  document.getElementById('popup-close').addEventListener('click',()=>popup.style.display='none');
+
+  viewer.screenSpaceEventHandler.setInputAction(click => {
+    const picked = viewer.scene.pick(click.position);
+    if (!Cesium.defined(picked)||!picked.getProperty){popup.style.display='none';return;}
+    const id  = picked.getProperty('tree_id'); if(!id){popup.style.display='none';return;}
+    const h   = picked.getProperty('height');
+    const cw  = picked.getProperty('crown_w');
+    const reg = picked.getProperty('region');
+    const lon = picked.getProperty('longitude');
+    const lat = picked.getProperty('latitude');
+    document.getElementById('p-id').textContent     = '#'+id;
+    document.getElementById('p-region').textContent = reg||'-';
+    document.getElementById('p-height').textContent = h?h+' m':'-';
+    document.getElementById('p-crown').textContent  = cw?cw+' m':'-';
+    document.getElementById('p-loc').textContent    = lat?lat.toFixed(5)+'N '+lon.toFixed(5)+'E':'-';
+    const tbody=document.getElementById('p-years'); tbody.innerHTML='';
+    const entry=treeStats[id]; const ayl=YLBL[currentYear];
+    ['2019','2021','2022','2023'].forEach(yr=>{
+      const tr=document.createElement('tr');
+      if(yr===ayl) tr.classList.add('ayr');
+      const yd=entry&&entry.years&&entry.years[yr];
+      tr.innerHTML=yd
+        ?'<td>'+yr+'</td><td>'+yd.height+' m</td><td>'+yd.crown_w+' m</td>'
+        :'<td>'+yr+'</td><td class="m">-</td><td class="m">-</td>';
+      tbody.appendChild(tr);
+    });
+    const x=click.position.x+14,y=click.position.y-10;
+    popup.style.left=(x+280>window.innerWidth?x-308:x)+'px';
+    popup.style.top=(y+280>window.innerHeight?y-280:y)+'px';
+    popup.style.display='block';
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+})();
+</script>
+</body>
+</html>
